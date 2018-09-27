@@ -18,27 +18,43 @@ firebase.initializeApp(config);
 
 var database = firebase.database();
 
-var readResults = ()=> {
+var readResults = () => {
   return database.ref('analyzed').once('value')
     .then((snapshot) => {
       let hasLane = [];
+      let unclear = [];
       let doesntHaveLane = [];
       let results = snapshot.val();
       Object.values(results).map((user)=>{
         user.map((point)=>{
-          if(point.judge == 0) {
-            doesntHaveLane.push({position:[point.longitude, point.latitude]});
+          let pos = {position: [point.longitude, point.latitude]};
+          if(point.judge <= 0) {
+            doesntHaveLane.push(pos);
+          } else if (point.judge <= 0.5) {
+            unclear.push(pos);
           } else {
-            hasLane.push({position:[point.longitude, point.latitude]});
+            hasLane.push(pos); 
           }
         });
       });
-      // console.log(hasLane);
-      return hasLane;
+      return [hasLane, unclear, doesntHaveLane];
     });
 }
 
-// readResults();
+var getBreadcrumbs = () => {
+  return database.ref('breadcrumbs').once('value')
+    .then((snapshot)=> {
+      let breadcrumbs = [];
+      let results = snapshot.val();
+      Object.values(results).map((user)=>{
+        Object.values(user).map((point) => {
+         let pos = {position: [point.longitude, point. latitude]}
+          breadcrumbs.push(pos);
+        });
+      });
+      return breadcrumbs;
+    });
+}
 
 // Set your mapbox token here
 const MAPBOX_TOKEN = process.env.MapboxAccessToken; // eslint-disable-line
@@ -56,32 +72,69 @@ class Root extends Component {
     constructor(props){
       super(props);
       this.state = {
+        breadcrumbs: [],
         hasLane:[],
+        unclear:[],
+        doesntHaveLane:[],
       };
     }
 
     componentDidMount(){
-     //console.log("hi");
-      this.updateHasLane();
+      this.updateLaneData();
     }
 
-  updateHasLane() {
+  updateLaneData() {
+    //TODO: use join
     readResults()
       .then((results) => {
         this.setState({
-          hasLane: results
-        })
-      })
+          hasLane: results[0],
+          unclear: results[1],
+          doesntHaveLane: results[2],
+        });
+      });
+
+    getBreadcrumbs()
+      .then((results) => {
+        this.setState({
+          breadcrumbs: results 
+        });
+      });
   }
 
   render() {
     return (
       <DeckGL initialViewState={INITIAL_VIEW_STATE} controller={true} width="100%" height="100%">
         <StaticMap mapboxApiAccessToken={MAPBOX_TOKEN} />
+
         <ScatterplotLayer
+          id='breadcrumbs'
+          data={this.state.breadcrumbs}
+          radiusScale={10}
+          radiusMinPixels={1}
+          getColor={x => [0, 0, 0]}
+        />
+
+        <ScatterplotLayer
+          id='hasLane'
           data={this.state.hasLane}
-          radiusScale={1}
+          radiusScale={20}
+          radiusMinPixels={1.5}
           getColor={x => [0, 0, 255]}
+        />
+        <ScatterplotLayer
+          id='unclear'
+          data={this.state.unclear}
+          radiusScale={20}
+          radiusMinPixels={1.5}
+          getColor={x => [255, 255, 0]}
+        />
+        <ScatterplotLayer
+          id='doesntHaveLane'
+          data={this.state.doesntHaveLane}
+          radiusScale={20}
+          radiusMinPixels={1.5}
+          getColor={x => [255, 0, 0]}
         />
       </DeckGL>
     );
